@@ -130,6 +130,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         # utc=True
     )
 
+    # TODO: implement an approach that uses sudo directly for copying files
     if os.geteuid():
         LOG.error("must run as root.")
         return 1
