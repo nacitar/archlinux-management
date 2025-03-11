@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import time
 from dataclasses import KW_ONLY, dataclass
 from logging import Handler
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Sequence
+
+from .utility import Configuration, load_resource
 
 LOG = logging.getLogger(__name__)
 
@@ -86,6 +89,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Increase log verbosity to DEBUG for console and log file.",
     )
+    operation_group = parser.add_mutually_exclusive_group(required=True)
+    operation_group.add_argument(
+        "-i",
+        "--install",
+        action="store_true",
+        help="Install the selected modification.",
+    )
+    operation_group.add_argument(
+        "-u",
+        "--uninstall",
+        action="store_true",
+        help="Uninstall the selected modification.",
+    )
+    parser.add_argument(
+        "modification",
+        type=str,
+        choices=["pacman_hook_paccache"],
+        help="The target modification.",
+    )
     args = parser.parse_args(args=argv)
 
     setup_logging(
@@ -108,5 +130,35 @@ def main(argv: Sequence[str] | None = None) -> int:
         # utc=True
     )
 
-    LOG.warning("application code goes here!")
+    if os.geteuid():
+        LOG.error("must run as root.")
+        return 1
+    if args.modification == "pacman_hook_paccache":
+        target_path = Path("/usr/share/libalpm/hooks/paccache.hook")
+        if args.install:
+            if target_path.exists():
+                LOG.warning(f"SKIPPING, already installed: {target_path}")
+            else:
+                LOG.info(f"writing file: {target_path}")
+                target_path.write_text(load_resource("paccache.hook"))
+        elif args.uninstall:
+            if target_path.exists():
+                target_path.unlink()
+            else:
+                LOG.warning(f"SKIPPING, not present: {target_path}")
+        else:
+            raise NotImplementedError()
+        return 0
+
+    # configuration = Configuration.from_file("/etc/systemd/journald.conf")
+    # print(len(configuration._sections))
+    # print(configuration.get("Journal.RateLimitBurst"))
+    # configuration.set("Journal.RateLimitBurst", "moo")
+    # configuration.set("Journal.Waffles", "syrup")
+    # print(configuration.get("Journal.RateLimitBurst"))
+    # configuration.set("Banana.Biscuit", "snarf")
+    # configuration.set("Journal.Waffles", "butter")
+    # configuration.comment("Journal.Waffles")
+    # print()
+    # print(configuration)
     return 0
