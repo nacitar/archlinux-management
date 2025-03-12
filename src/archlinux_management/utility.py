@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import importlib.resources
+import logging
 import os
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Sequence
+
+LOG = logging.getLogger(__name__)
 
 SECTION_REGEX = re.compile(r"^\s*\[\s*(?P<name>[^]]+)\s*\]\s*$")
 KEY_VALUE_PATTERN = re.compile(
@@ -174,3 +179,72 @@ class Configuration:
             for line in section.lines:
                 lines.append(str(line))
         return os.linesep.join(lines)
+
+
+def prompt_yes_no(message: str) -> bool:
+    while True:
+        response = input(f":: {message} [y/n] ")
+        lower_response = response.lower()
+        if lower_response in ["y", "yes", "n", "no"]:
+            break
+        print(f"Invalid selection: {response}")
+    return lower_response[0] == "y"
+
+
+def command_with_escalation(
+    command: Sequence[str | bytes | os.PathLike[Any]], *, quiet: bool = True
+) -> None:
+    options: dict[str, Any] = {}
+    if quiet:
+        options.update(
+            {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        )
+
+    if subprocess.run(command, **options).returncode:
+        LOG.warning("sudo appears to be required.")
+        subprocess.run(["sudo"] + list(command), check=True, **options)
+
+
+class ReviewedFileUpdater:
+    original: Path
+    changed: Path
+
+    def __init__(self, original: str | Path, changed: str | Path) -> None:
+        self.original = Path(original)
+        self.changed = Path(changed)
+
+    def review(self) -> bool:
+        # nvim -d test.txt test2.txt +'set noma|wincmd w'
+        LOG.info(f"Review requested for file: {self.original}")
+        if prompt_yes_no("Review the changes?"):
+            LOG.info("Using diff utility for review...")
+            # TODO: support other utilities?
+            subprocess.run(
+                [
+                    "nvim",
+                    "-d",
+                    "+set noma|wincmd w",
+                    str(self.original),
+                    str(self.changed),
+                ],
+                check=True,
+            )
+        return prompt_yes_no("Proceed with installation?")
+
+    def remove(self, review: bool = True) -> None:
+        if not review or self.review():
+            LOG.info(f"Removing file: {self.original}")
+            if prompt_yes_no("Proceed with removal?"):
+                command_with_escalation(["unlink", str(self.original)])
+
+    def replace(self, review: bool = True) -> None:
+        if not review or self.review():
+            LOG.info(f"Replacing file: {self.original}")
+            command_with_escalation(
+                [
+                    "cp",
+                    "--no-preserve=mode,ownership",
+                    str(self.changed),
+                    str(self.original),
+                ]
+            )

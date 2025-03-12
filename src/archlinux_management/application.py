@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
+import sys
 import time
 from dataclasses import KW_ONLY, dataclass
 from logging import Handler
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Sequence
 
-from .utility import Configuration, load_resource
+from .utility import Configuration, ReviewedFileUpdater, load_resource
 
 LOG = logging.getLogger(__name__)
 
@@ -21,7 +22,6 @@ class LogFileOptions:
     _ = KW_ONLY
     max_kb: int
     backup_count: int
-    level: int = logging.INFO
     encoding: str = "utf-8"
     append: bool = True
 
@@ -33,39 +33,46 @@ class LogFileOptions:
             maxBytes=self.max_kb * 1024,
             backupCount=self.backup_count,
         )
-        handler.setLevel(self.level)
         return handler
+
+
+class ConsoleLogFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        if record.levelno == logging.INFO:
+            return record.getMessage()
+        return f"{record.levelname}: {record.getMessage()}"
 
 
 def setup_logging(
     *,
-    console_level: int = logging.WARNING,
+    verbose: bool = False,
     file_options: LogFileOptions | None = None,
     utc: bool = False,
 ) -> None:
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(console_level)
+    log_level = logging.DEBUG if verbose else logging.INFO
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(log_level)
+    console_handler.setFormatter(ConsoleLogFormatter())
     handlers: list[logging.Handler] = [console_handler]
-    message = "logging configured"
+    message = "Logging configured"
     if file_options:
-        handlers.append(file_options.create_handler())
-        global_level = min(console_level, file_options.level)
+        file_handler = file_options.create_handler()
+        file_handler.setLevel(log_level)
+        handlers.append(file_handler)
         message += f", logging to file: {Path(file_options.path).resolve()}"
-    else:
-        global_level = console_level
     logging.basicConfig(
         style="{",
         format=(
             "[{asctime:s}.{msecs:03.0f}]"
-            " [{module:s}] {levelname:>8s}: {message:s}"
+            " [{module:s}] {levelname:s}: {message:s}"
         ),
         datefmt="%Y-%m-%d %H:%M:%S",
-        level=global_level,
+        level=log_level,
         handlers=handlers,
     )
     if utc:
         logging.Formatter.converter = time.gmtime
-    LOG.info(message)
+    LOG.debug(message)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -76,18 +83,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Path to the log file to be written.",
         default="",
     )
-    loglevel_group = parser.add_mutually_exclusive_group(required=False)
-    loglevel_group.add_argument(
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
-        help="Increase log verbosity to INFO for console.",
-    )
-    loglevel_group.add_argument(
-        "-d",
-        "--debug",
-        action="store_true",
-        help="Increase log verbosity to DEBUG for console and log file.",
+        help="Increase log verbosity to DEBUG.",
     )
     operation_group = parser.add_mutually_exclusive_group(required=True)
     operation_group.add_argument(
@@ -105,17 +105,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "modification",
         type=str,
-        choices=["pacman_hook_paccache"],
+        choices=["pacman_hook_paccache", "journald_limits"],
         help="The target modification.",
     )
     args = parser.parse_args(args=argv)
 
     setup_logging(
-        console_level=(
-            logging.DEBUG
-            if args.debug
-            else logging.INFO if args.verbose else logging.WARNING
-        ),
+        verbose=args.verbose,
         file_options=(
             None
             if not args.log_path
@@ -123,18 +119,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 path=args.log_path,
                 max_kb=512,  # 0 for unbounded size and no rotation
                 backup_count=1,  # 0 for no rolling backups
-                level=logging.DEBUG if args.debug else logging.INFO,
                 # append=False
             )
         ),
         # utc=True
     )
 
-    # TODO: implement an approach that uses sudo directly for copying files
-    if os.geteuid():
-        LOG.error("must run as root.")
-        return 1
     if args.modification == "pacman_hook_paccache":
+        # TODO: adjust logic for ReviewedFileUpdater
         target_path = Path("/usr/share/libalpm/hooks/paccache.hook")
         if args.install:
             if target_path.exists():
@@ -150,6 +142,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             raise NotImplementedError()
         return 0
+    elif args.modification == "journald_limits":
+        # conf_path = Path("/etc/systemd/journald.conf")
+        conf_path = Path("/home/nacitar/tmp/journald.conf")
+        # TODO: the real change?
+        configuration = Configuration.from_file(conf_path)
+        configuration.set("Journal.RateLimitBurst", "moo")
+        configuration.set("Journal.Waffles", "syrup")
+        configuration.set("Banana.Biscuit", "snarf")
+        configuration.set("Journal.Waffles", "butter")
+        configuration.comment("Journal.Waffles")
+
+        # TODO: handle install/uninstall?
+        # TODO: streamline tempfile creation
+        with NamedTemporaryFile("w+", delete_on_close=False) as temp_file:
+            temp_file.write(str(configuration))
+            temp_file.close()
+            updater = ReviewedFileUpdater(str(conf_path), temp_file.name)
+            updater.replace()
 
     # configuration = Configuration.from_file("/etc/systemd/journald.conf")
     # print(len(configuration._sections))
