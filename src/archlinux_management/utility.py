@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+from .style import Style
+
 LOG = logging.getLogger(__name__)
 
 SECTION_REGEX = re.compile(r"^\s*\[\s*(?P<name>[^]]+)\s*\]\s*$")
@@ -183,7 +185,7 @@ class Configuration:
 
 def prompt_yes_no(message: str) -> bool:
     while True:
-        response = input(f":: {message} [y/n] ")
+        response = input(f"{Style.GREEN}::{Style.RESET} {message} [y/n] ")
         lower_response = response.lower()
         if lower_response in ["y", "yes", "n", "no"]:
             break
