@@ -7,6 +7,7 @@ import re
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from shutil import which
 from typing import Any, Sequence
 
 from .style import Style
@@ -220,15 +221,24 @@ class ReviewedFileUpdater:
         LOG.info(f"Review requested for file: {self.original}")
         if prompt_yes_no("Review the changes?"):
             LOG.info("Using diff utility for review...")
-            # TODO: support other utilities?
+            diff_cmd = os.environ.get("DIFFPROG")
+            if not diff_cmd:
+                if which("nvim"):
+                    diff_cmd = "nvim -d"
+                elif which("vim"):
+                    diff_cmd = "vim -d"
+                elif which("diff"):
+                    diff_cmd = "diff"
+                else:
+                    message = (
+                        "no diff utility found, "
+                        "define the 'DIFFPROG' environment variable."
+                    )
+                    LOG.error(message)
+                    raise RuntimeError(message)
+
             subprocess.run(
-                [
-                    "nvim",
-                    "-d",
-                    "+set noma|wincmd w",
-                    str(self.original),
-                    str(self.changed),
-                ],
+                diff_cmd.split() + [str(self.original), str(self.changed)],
                 check=True,
             )
         return prompt_yes_no("Proceed with installation?")
