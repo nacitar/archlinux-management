@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import sys
 import time
 from dataclasses import KW_ONLY, dataclass
 from logging import Handler
@@ -22,6 +21,7 @@ class LogFileOptions:
     _ = KW_ONLY
     max_kb: int
     backup_count: int
+    level: int = logging.INFO
     encoding: str = "utf-8"
     append: bool = True
 
@@ -33,33 +33,26 @@ class LogFileOptions:
             maxBytes=self.max_kb * 1024,
             backupCount=self.backup_count,
         )
+        handler.setLevel(self.level)
         return handler
-
-
-class ConsoleLogFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:
-        if record.levelno == logging.INFO:
-            return record.getMessage()
-        return f"{record.levelname}: {record.getMessage()}"
 
 
 def setup_logging(
     *,
-    verbose: bool = False,
+    console_level: int = logging.WARNING,
     file_options: LogFileOptions | None = None,
     utc: bool = False,
 ) -> None:
-    log_level = logging.DEBUG if verbose else logging.INFO
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(log_level)
-    console_handler.setFormatter(ConsoleLogFormatter())
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
     handlers: list[logging.Handler] = [console_handler]
-    message = "Logging configured"
+    message = "logging configured"
     if file_options:
-        file_handler = file_options.create_handler()
-        file_handler.setLevel(log_level)
-        handlers.append(file_handler)
+        handlers.append(file_options.create_handler())
+        global_level = min(console_level, file_options.level)
         message += f", logging to file: {Path(file_options.path).resolve()}"
+    else:
+        global_level = console_level
     logging.basicConfig(
         style="{",
         format=(
@@ -67,12 +60,12 @@ def setup_logging(
             " [{module:s}] {levelname:s}: {message:s}"
         ),
         datefmt="%Y-%m-%d %H:%M:%S",
-        level=log_level,
+        level=global_level,
         handlers=handlers,
     )
     if utc:
         logging.Formatter.converter = time.gmtime
-    LOG.debug(message)
+    LOG.info(message)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -83,11 +76,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Path to the log file to be written.",
         default="",
     )
-    parser.add_argument(
+    loglevel_group = parser.add_mutually_exclusive_group(required=False)
+    loglevel_group.add_argument(
         "-v",
         "--verbose",
         action="store_true",
-        help="Increase log verbosity to DEBUG.",
+        help="Increase log verbosity to INFO for console.",
+    )
+    loglevel_group.add_argument(
+        "-d",
+        "--debug",
+        action="store_true",
+        help="Increase log verbosity to DEBUG for console and log file.",
     )
     operation_group = parser.add_mutually_exclusive_group(required=True)
     operation_group.add_argument(
@@ -111,7 +111,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(args=argv)
 
     setup_logging(
-        verbose=args.verbose,
+        console_level=(
+            logging.DEBUG
+            if args.debug
+            else logging.INFO if args.verbose else logging.WARNING
+        ),
         file_options=(
             None
             if not args.log_path
@@ -119,6 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 path=args.log_path,
                 max_kb=512,  # 0 for unbounded size and no rotation
                 backup_count=1,  # 0 for no rolling backups
+                level=logging.DEBUG if args.debug else logging.INFO,
                 # append=False
             )
         ),

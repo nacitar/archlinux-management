@@ -185,12 +185,14 @@ class Configuration:
 
 
 def prompt_yes_no(message: str) -> bool:
+    LOG.info(f"Prompting user: {message}")
     while True:
         response = input(f"{Style.GREEN}::{Style.RESET} {message} [y/n] ")
         lower_response = response.lower()
         if lower_response in ["y", "yes", "n", "no"]:
             break
         print(f"Invalid selection: {response}")
+    LOG.info(f"- Prompt response: {lower_response[0]}")
     return lower_response[0] == "y"
 
 
@@ -208,6 +210,24 @@ def command_with_escalation(
         subprocess.run(["sudo"] + list(command), check=True, **options)
 
 
+def diff_merge(
+    original: str | Path, changed: str | Path, *, diffprog: str = ""
+) -> None:
+    for command in [
+        diffprog,
+        os.environ.get("DIFFPROG", ""),
+        "nvim -d",
+        "vim -d",
+    ]:
+        if command:
+            command_line = command.split() + [str(original), str(changed)]
+            if which(command_line[0]):
+                LOG.info(f"Invoking diffprog: {command_line}")
+                subprocess.run(command_line)
+                return
+    raise RuntimeError("no diffprog specified or located.")
+
+
 class ReviewedFileUpdater:
     original: Path
     changed: Path
@@ -217,30 +237,9 @@ class ReviewedFileUpdater:
         self.changed = Path(changed)
 
     def review(self) -> bool:
-        # nvim -d test.txt test2.txt +'set noma|wincmd w'
         LOG.info(f"Review requested for file: {self.original}")
         if prompt_yes_no("Review the changes?"):
-            LOG.info("Using diff utility for review...")
-            diff_cmd = os.environ.get("DIFFPROG")
-            if not diff_cmd:
-                if which("nvim"):
-                    diff_cmd = "nvim -d"
-                elif which("vim"):
-                    diff_cmd = "vim -d"
-                elif which("diff"):
-                    diff_cmd = "diff"
-                else:
-                    message = (
-                        "no diff utility found, "
-                        "define the 'DIFFPROG' environment variable."
-                    )
-                    LOG.error(message)
-                    raise RuntimeError(message)
-
-            subprocess.run(
-                diff_cmd.split() + [str(self.original), str(self.changed)],
-                check=True,
-            )
+            diff_merge(self.original, self.changed)
         return prompt_yes_no("Proceed with installation?")
 
     def remove(self, review: bool = True) -> None:
