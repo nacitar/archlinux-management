@@ -38,21 +38,15 @@ class LogFileOptions:
 
 
 def setup_logging(
-    *,
-    console_level: int = logging.WARNING,
-    file_options: LogFileOptions | None = None,
-    utc: bool = False,
+    *, options: LogFileOptions | None = None, utc: bool = False
 ) -> None:
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(console_level)
-    handlers: list[logging.Handler] = [console_handler]
+    handlers: list[logging.Handler] = []
     message = "logging configured"
-    if file_options:
-        handlers.append(file_options.create_handler())
-        global_level = min(console_level, file_options.level)
-        message += f", logging to file: {Path(file_options.path).resolve()}"
+    if options:
+        handlers.append(options.create_handler())
+        message += f", logging to file: {Path(options.path).resolve()}"
     else:
-        global_level = console_level
+        handlers.append(logging.NullHandler())
     logging.basicConfig(
         style="{",
         format=(
@@ -60,7 +54,7 @@ def setup_logging(
             " [{module:s}] {levelname:s}: {message:s}"
         ),
         datefmt="%Y-%m-%d %H:%M:%S",
-        level=global_level,
+        level=options.level if options else logging.INFO,
         handlers=handlers,
     )
     if utc:
@@ -76,18 +70,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Path to the log file to be written.",
         default="",
     )
-    loglevel_group = parser.add_mutually_exclusive_group(required=False)
-    loglevel_group.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Increase log verbosity to INFO for console.",
-    )
-    loglevel_group.add_argument(
+    parser.add_argument(
         "-d",
         "--debug",
         action="store_true",
-        help="Increase log verbosity to DEBUG for console and log file.",
+        help="Increase log verbosity to DEBUG.",
     )
     operation_group = parser.add_mutually_exclusive_group(required=True)
     operation_group.add_argument(
@@ -111,12 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(args=argv)
 
     setup_logging(
-        console_level=(
-            logging.DEBUG
-            if args.debug
-            else logging.INFO if args.verbose else logging.WARNING
-        ),
-        file_options=(
+        options=(
             None
             if not args.log_path
             else LogFileOptions(

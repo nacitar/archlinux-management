@@ -8,7 +8,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
-from typing import Any, Sequence
+from typing import Any, ClassVar, Sequence
 
 from .style import Style
 
@@ -19,10 +19,6 @@ KEY_VALUE_PATTERN = re.compile(
     r"^(?P<indent>\s*)"
     r"(?P<key>[^=]+)(?P<assignment>\s*=\s*)(?P<value>.+?)(?P<ws_post>\s*)$"
 )
-
-
-def sanitize_package_name(name: str) -> str:
-    return re.sub(r"[^a-z0-9_]", "_", name.strip().lower())
 
 
 RESOURCES_PACKAGE = f"{__package__}.resources"
@@ -184,16 +180,96 @@ class Configuration:
         return os.linesep.join(lines)
 
 
-def prompt_yes_no(message: str) -> bool:
-    LOG.info(f"Prompting user: {message}")
-    while True:
-        response = input(f"{Style.GREEN}::{Style.RESET} {message} [y/n] ")
-        lower_response = response.lower()
-        if lower_response in ["y", "yes", "n", "no"]:
-            break
-        print(f"Invalid selection: {response}")
-    LOG.info(f"- Prompt response: {lower_response[0]}")
-    return lower_response[0] == "y"
+@dataclass
+class Tui:
+    __YES_NO_ALTERNATES: ClassVar[dict[str, str]] = {"yes": "y", "no": "n"}
+    LOG: logging.Logger | None = None
+
+    def info(self, message: str, *, log: bool = True) -> None:
+        if log and self.LOG:
+            self.LOG.info(message)
+        print(
+            f"{Style.GREEN}{Style.BOLD}==>"
+            f"{Style.RESET_COLOR} {message}{Style.RESET}"
+        )
+
+    def detail(self, message: str, *, log: bool = True) -> None:
+        if log and self.LOG:
+            self.LOG.info(f"- {message}")
+        print(
+            f"  {Style.BLUE}{Style.BOLD}->"
+            f"{Style.RESET_COLOR} {message}{Style.RESET}"
+        )
+
+    def warning(self, message: str, *, log: bool = True) -> None:
+        if log and self.LOG:
+            self.LOG.warning(message)
+        print(
+            f"{Style.YELLOW}{Style.BOLD}==> WARNING:"
+            f"{Style.RESET_COLOR} {message}{Style.RESET}"
+        )
+
+    def error(self, message: str, *, log: bool = True) -> None:
+        if log and self.LOG:
+            self.LOG.error(message)
+        print(
+            f"{Style.RED}{Style.BOLD}==> ERROR:"
+            f"{Style.RESET_COLOR} {message}{Style.RESET}"
+        )
+
+    def prompt(
+        self,
+        message: str,
+        answers: list[str] | None = None,
+        default: str = "",
+        *,
+        log: bool = True,
+        lower: bool = True,
+        alternates: dict[str, str] | None = None,
+    ) -> str:
+        if answers:
+            answer_display = f" [{
+                "/".join(
+                    answer.lower() if answer != default else answer.upper()
+                    for answer in answers
+                )
+            }]"
+            if default and default not in answers:
+                raise ValueError(
+                    f'default "{default}" not valid: {answer_display}'
+                )
+        else:
+            answer_display = ""
+        message = f"{message}{answer_display} "
+        while True:
+            answer = (
+                input(
+                    f"{Style.GREEN}{Style.BOLD}::"
+                    f"{Style.RESET_COLOR} {message}{Style.RESET}"
+                )
+                or default
+            )
+            if lower:
+                answer = answer.lower()
+            if alternates:
+                answer = alternates.get(answer, answer)
+            if not answers or answer in answers:
+                return answer
+            self.detail("Invalid answer.", log=False)
+        if log and self.LOG:
+            self.LOG.info(f"PROMPT: {message}{answer}")
+        return answer
+
+    def prompt_yes_no(self, message: str, default: str = "") -> bool:
+        return (
+            self.prompt(
+                message,
+                ["y", "n"],
+                default,
+                alternates=type(self).__YES_NO_ALTERNATES,
+            )
+            == "y"
+        )
 
 
 def command_with_escalation(
@@ -235,22 +311,26 @@ class ReviewedFileUpdater:
     def __init__(self, original: str | Path, changed: str | Path) -> None:
         self.original = Path(original)
         self.changed = Path(changed)
+        self._tui = Tui(LOG)
+
+    # TODO
+    # def with_tempfile(original: str|Path, *, content
 
     def review(self) -> bool:
-        LOG.info(f"Review requested for file: {self.original}")
-        if prompt_yes_no("Review the changes?"):
+        self._tui.info(f"Review requested for file: {self.original}")
+        if self._tui.prompt_yes_no("Review the changes?"):
             diff_merge(self.original, self.changed)
-        return prompt_yes_no("Proceed with installation?")
+        return self._tui.prompt_yes_no("Proceed with installation?")
 
     def remove(self, review: bool = True) -> None:
         if not review or self.review():
-            LOG.info(f"Removing file: {self.original}")
-            if prompt_yes_no("Proceed with removal?"):
+            self._tui.info(f"Removing file: {self.original}")
+            if self._tui.prompt_yes_no("Proceed with removal?"):
                 command_with_escalation(["unlink", str(self.original)])
 
     def replace(self, review: bool = True) -> None:
         if not review or self.review():
-            LOG.info(f"Replacing file: {self.original}")
+            self._tui.info(f"Replacing file: {self.original}")
             command_with_escalation(
                 [
                     "cp",

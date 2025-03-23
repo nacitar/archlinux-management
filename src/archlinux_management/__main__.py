@@ -1,14 +1,18 @@
 import logging
+import sys
 
-from .application import main
+from .application import main as application_main
 
 LOG = logging.getLogger(__name__)
 
-if __name__ == "__main__":
-    import sys
 
+def main() -> None:
     try:
-        sys.exit(main())
+        sys.exit(application_main())
     except Exception as e:
         LOG.exception(str(e))
         raise
+
+
+if __name__ == "__main__":
+    main()

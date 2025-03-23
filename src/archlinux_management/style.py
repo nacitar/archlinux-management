@@ -14,6 +14,7 @@ class Style(StrEnum):
 
     __settings: __StyleSettings = __StyleSettings()
     RESET = "sgr0"
+    RESET_COLOR = "op"
     BOLD = "bold"
     UNDERLINE = "smul"
     REVERSE = "rev"
