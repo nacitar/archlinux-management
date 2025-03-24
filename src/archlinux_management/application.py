@@ -7,7 +7,6 @@ from dataclasses import KW_ONLY, dataclass
 from logging import Handler
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Sequence
 
 from .utility import Configuration, ReviewedFileUpdater, load_resource
@@ -141,11 +140,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         configuration.comment("Journal.Waffles")
 
         # TODO: handle install/uninstall?
-        # TODO: streamline tempfile creation
-        with NamedTemporaryFile("w+", delete_on_close=False) as temp_file:
-            temp_file.write(str(configuration))
-            temp_file.close()
-            updater = ReviewedFileUpdater(str(conf_path), temp_file.name)
+        with ReviewedFileUpdater.from_configuration(
+            conf_path, configuration
+        ) as updater:
             updater.replace()
 
     # configuration = Configuration.from_file("/etc/systemd/journald.conf")

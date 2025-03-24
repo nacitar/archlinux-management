@@ -5,10 +5,12 @@ import logging
 import os
 import re
 import subprocess
-from dataclasses import dataclass
+from dataclasses import KW_ONLY, dataclass, field
 from pathlib import Path
 from shutil import which
-from typing import Any, ClassVar, Sequence
+from tempfile import NamedTemporaryFile
+from types import TracebackType
+from typing import Any, ClassVar, Sequence, Type
 
 from .style import Style
 
@@ -183,10 +185,10 @@ class Configuration:
 @dataclass
 class Tui:
     __YES_NO_ALTERNATES: ClassVar[dict[str, str]] = {"yes": "y", "no": "n"}
-    LOG: logging.Logger | None = None
+    LOG: logging.Logger = field(default=LOG)
 
     def info(self, message: str, *, log: bool = True) -> None:
-        if log and self.LOG:
+        if log:
             self.LOG.info(message)
         print(
             f"{Style.GREEN}{Style.BOLD}==>"
@@ -194,7 +196,7 @@ class Tui:
         )
 
     def detail(self, message: str, *, log: bool = True) -> None:
-        if log and self.LOG:
+        if log:
             self.LOG.info(f"- {message}")
         print(
             f"  {Style.BLUE}{Style.BOLD}->"
@@ -202,7 +204,7 @@ class Tui:
         )
 
     def warning(self, message: str, *, log: bool = True) -> None:
-        if log and self.LOG:
+        if log:
             self.LOG.warning(message)
         print(
             f"{Style.YELLOW}{Style.BOLD}==> WARNING:"
@@ -210,7 +212,7 @@ class Tui:
         )
 
     def error(self, message: str, *, log: bool = True) -> None:
-        if log and self.LOG:
+        if log:
             self.LOG.error(message)
         print(
             f"{Style.RED}{Style.BOLD}==> ERROR:"
@@ -256,7 +258,7 @@ class Tui:
             if not answers or answer in answers:
                 return answer
             self.detail("Invalid answer.", log=False)
-        if log and self.LOG:
+        if log:
             self.LOG.info(f"PROMPT: {message}{answer}")
         return answer
 
@@ -304,17 +306,43 @@ def diff_merge(
     raise RuntimeError("no diffprog specified or located.")
 
 
+@dataclass
 class ReviewedFileUpdater:
     original: Path
+    _ = KW_ONLY
     changed: Path
+    delete: bool = False
+    _tui: Tui = field(init=False, default_factory=lambda: Tui(LOG))
 
-    def __init__(self, original: str | Path, changed: str | Path) -> None:
-        self.original = Path(original)
-        self.changed = Path(changed)
-        self._tui = Tui(LOG)
+    @classmethod
+    def from_content(
+        cls, original: Path, *, content: str
+    ) -> ReviewedFileUpdater:
+        with NamedTemporaryFile(
+            "w+", delete=False, suffix=original.suffix
+        ) as temp_file:
+            temp_file.write(content)
+            temp_file.close()
+        return ReviewedFileUpdater(original, Path(temp_file.name), delete=True)
 
-    # TODO
-    # def with_tempfile(original: str|Path, *, content
+    def __enter__(self) -> ReviewedFileUpdater:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: Type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> bool | None:
+        if self.delete:
+            self.changed.unlink()
+        return None
+
+    @classmethod
+    def from_configuration(
+        cls, original: Path, configuration: Configuration
+    ) -> ReviewedFileUpdater:
+        return cls.from_content(original, content=str(configuration))
 
     def review(self) -> bool:
         self._tui.info(f"Review requested for file: {self.original}")
