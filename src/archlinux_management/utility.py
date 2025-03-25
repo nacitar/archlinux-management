@@ -265,6 +265,7 @@ class ReviewedFileUpdater:
             diff_merge(self.original, self.other)
 
         if not confirm or tui.prompt_yes_no("Proceed with removal?"):
+            LOG.info(f"Removing: {self.original}")
             command_with_escalation(["unlink", str(self.original)])
 
     def replace(self, *, review: bool = True, confirm: bool = True) -> None:
@@ -273,6 +274,7 @@ class ReviewedFileUpdater:
             diff_merge(self.original, self.other)
 
         if not confirm or tui.prompt_yes_no("Proceed with replacement?"):
+            LOG.info(f"Replacing: {self.original}")
             command_with_escalation(
                 [
                     "cp",
