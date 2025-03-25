@@ -26,13 +26,13 @@ KEY_VALUE_PATTERN = re.compile(
 RESOURCES_PACKAGE = f"{__package__}.resources"
 
 
-def load_resource(name: str) -> str:
+def get_resource_content(name: str) -> str:
     with importlib.resources.open_text(RESOURCES_PACKAGE, name) as file:
         return file.read()
 
 
 @dataclass
-class ConfigurationField:
+class _ConfigurationField:
     indent: str
     comment: str
     key: str
@@ -48,9 +48,9 @@ class ConfigurationField:
 
 
 @dataclass
-class Section:
+class _Section:
     name: str
-    lines: list[str | ConfigurationField]
+    lines: list[str | _ConfigurationField]
 
 
 class Configuration:
@@ -70,15 +70,15 @@ class Configuration:
         self._comment_char = comment_char
         self._section_divider = section_divider
         self._default_indent = default_indent
-        self._fields: dict[str, list[ConfigurationField]] = {}
-        self._sections: list[Section] = []
+        self._fields: dict[str, list[_ConfigurationField]] = {}
+        self._sections: list[_Section] = []
 
         comment_regex = re.compile(rf"^{re.escape(self._comment_char)}\s*")
-        section = Section("", [])
+        section = _Section("", [])
         self._sections.append(section)
         for line in lines:
             if match := SECTION_REGEX.match(line):
-                section = Section(match.group("name"), [])
+                section = _Section(match.group("name"), [])
                 self._sections.append(section)
                 continue
             elif match := KEY_VALUE_PATTERN.match(line):
@@ -91,7 +91,7 @@ class Configuration:
                 value = match.group("value")
 
                 if key:  # to prevent matching "# = value"
-                    field = ConfigurationField(
+                    field = _ConfigurationField(
                         indent=match.group("indent"),
                         comment=comment,
                         key=key,
@@ -106,7 +106,7 @@ class Configuration:
                     continue
             section.lines.append(line)
 
-    def _get_set_fields(self, key: str) -> list[ConfigurationField]:
+    def _get_set_fields(self, key: str) -> list[_ConfigurationField]:
         return [
             field for field in self._fields.get(key, []) if not field.comment
         ]
@@ -146,7 +146,7 @@ class Configuration:
                 if section.name == section_name:
                     found_section = True
                     break
-            field = ConfigurationField(
+            field = _ConfigurationField(
                 indent=" " * self._default_indent,
                 comment="",
                 key=section_key,
@@ -157,7 +157,7 @@ class Configuration:
             if found_section:
                 section.lines.append(field)
             else:
-                self._sections.append(Section(section_name, [field]))
+                self._sections.append(_Section(section_name, [field]))
             self._fields.setdefault(key, []).append(field)
 
     @classmethod
@@ -324,6 +324,14 @@ class ReviewedFileUpdater:
             temp_file.write(content)
             temp_file.close()
         return ReviewedFileUpdater(original, Path(temp_file.name), delete=True)
+
+    @classmethod
+    def from_resource(
+        cls, original: Path, *, resource: str
+    ) -> ReviewedFileUpdater:
+        return cls.from_content(
+            original, content=get_resource_content(resource)
+        )
 
     def __enter__(self) -> ReviewedFileUpdater:
         return self

@@ -2,25 +2,24 @@ from __future__ import annotations
 
 import argparse
 import logging
-import time
 from dataclasses import KW_ONLY, dataclass
 from logging import Handler
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Sequence
 
-from .utility import Configuration, ReviewedFileUpdater, load_resource
+from .utility import Configuration, ReviewedFileUpdater, get_resource_content
 
 LOG = logging.getLogger(__name__)
 
 
 @dataclass
 class LogFileOptions:
-    path: str | Path
+    path: Path
     _ = KW_ONLY
     max_kb: int
     backup_count: int
-    level: int = logging.INFO
+    level: int = logging.DEBUG
     encoding: str = "utf-8"
     append: bool = True
 
@@ -36,44 +35,68 @@ class LogFileOptions:
         return handler
 
 
-def setup_logging(
-    *, options: LogFileOptions | None = None, utc: bool = False
+def configure_logging(
+    console_level: int, log_file_options: LogFileOptions | None = None
 ) -> None:
-    handlers: list[logging.Handler] = []
-    message = "logging configured"
-    if options:
-        handlers.append(options.create_handler())
-        message += f", logging to file: {Path(options.path).resolve()}"
-    else:
-        handlers.append(logging.NullHandler())
-    logging.basicConfig(
-        style="{",
-        format=(
-            "[{asctime:s}.{msecs:03.0f}]"
-            " [{module:s}] {levelname:s}: {message:s}"
-        ),
-        datefmt="%Y-%m-%d %H:%M:%S",
-        level=options.level if options else logging.INFO,
-        handlers=handlers,
+    logging.getLogger().handlers = []
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(console_level)
+    console_handler.setFormatter(
+        logging.Formatter(fmt="{levelname:s}: {message:s}", style="{")
     )
-    if utc:
-        logging.Formatter.converter = time.gmtime
-    LOG.info(message)
+    logging.getLogger().addHandler(console_handler)
+    global_level = console_level
+    if log_file_options:
+        global_level = min(global_level, log_file_options.level)
+        file_handler = log_file_options.create_handler()
+        file_handler.setFormatter(
+            logging.Formatter(
+                fmt=(
+                    "[{asctime:s}.{msecs:03.0f}]"
+                    " [{levelname:s}] {module:s}: {message:s}"
+                ),
+                datefmt="%Y-%m-%d %H:%M:%S",
+                style="{",
+            )
+        )
+        logging.getLogger().addHandler(file_handler)
+    logging.getLogger().setLevel(global_level)
+    logging.info("logging configured")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Does something.")
-    parser.add_argument(
-        "--log-path",
-        type=str,
-        help="Path to the log file to be written.",
-        default="",
+    log_group = parser.add_argument_group("logging")
+    log_group.add_argument(
+        "--log-file",
+        metavar="FILE",
+        help="Path to a file where logs will be written, if specified.",
     )
-    parser.add_argument(
-        "-d",
+    log_verbosity_group = log_group.add_mutually_exclusive_group(
+        required=False
+    )
+    log_verbosity_group.add_argument(
+        "-v",
+        "--verbose",
+        action="store_const",
+        dest="console_level",
+        const=logging.INFO,
+        help="Increase console log level to INFO.",
+    )
+    log_verbosity_group.add_argument(
+        "-q",
+        "--quiet",
+        action="store_const",
+        dest="console_level",
+        const=logging.ERROR,
+        help="Decrease console log level to ERROR.  Overrides -v.",
+    )
+    log_verbosity_group.add_argument(
         "--debug",
-        action="store_true",
-        help="Increase log verbosity to DEBUG.",
+        action="store_const",
+        dest="console_level",
+        const=logging.DEBUG,
+        help="Maximum console log verbosity (DEBUG).  Overrides -v and -q.",
     )
     operation_group = parser.add_mutually_exclusive_group(required=True)
     operation_group.add_argument(
@@ -95,20 +118,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="The target modification.",
     )
     args = parser.parse_args(args=argv)
-
-    setup_logging(
-        options=(
+    configure_logging(
+        console_level=args.console_level or logging.WARNING,
+        log_file_options=(
             None
-            if not args.log_path
+            if not args.log_file
             else LogFileOptions(
-                path=args.log_path,
+                path=Path(args.log_file),
                 max_kb=512,  # 0 for unbounded size and no rotation
                 backup_count=1,  # 0 for no rolling backups
-                level=logging.DEBUG if args.debug else logging.INFO,
                 # append=False
             )
         ),
-        # utc=True
     )
 
     if args.modification == "pacman_hook_paccache":
@@ -119,7 +140,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 LOG.warning(f"SKIPPING, already installed: {target_path}")
             else:
                 LOG.info(f"writing file: {target_path}")
-                target_path.write_text(load_resource("paccache.hook"))
+                target_path.write_text(get_resource_content("paccache.hook"))
         elif args.uninstall:
             if target_path.exists():
                 target_path.unlink()
