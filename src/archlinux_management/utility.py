@@ -5,14 +5,14 @@ import logging
 import os
 import re
 import subprocess
-from dataclasses import KW_ONLY, dataclass, field
+from dataclasses import KW_ONLY, dataclass
 from pathlib import Path
 from shutil import which
 from tempfile import NamedTemporaryFile
 from types import TracebackType
-from typing import Any, ClassVar, Sequence, Type
+from typing import Any, Sequence, Type
 
-from .style import Style
+from . import tui
 
 LOG = logging.getLogger(__name__)
 
@@ -182,98 +182,6 @@ class Configuration:
         return os.linesep.join(lines)
 
 
-@dataclass
-class Tui:
-    __YES_NO_ALTERNATES: ClassVar[dict[str, str]] = {"yes": "y", "no": "n"}
-    LOG: logging.Logger = field(default=LOG)
-
-    def info(self, message: str, *, log: bool = True) -> None:
-        if log:
-            self.LOG.info(message)
-        print(
-            f"{Style.GREEN}{Style.BOLD}==>"
-            f"{Style.RESET_COLOR} {message}{Style.RESET}"
-        )
-
-    def detail(self, message: str, *, log: bool = True) -> None:
-        if log:
-            self.LOG.info(f"- {message}")
-        print(
-            f"  {Style.BLUE}{Style.BOLD}->"
-            f"{Style.RESET_COLOR} {message}{Style.RESET}"
-        )
-
-    def warning(self, message: str, *, log: bool = True) -> None:
-        if log:
-            self.LOG.warning(message)
-        print(
-            f"{Style.YELLOW}{Style.BOLD}==> WARNING:"
-            f"{Style.RESET_COLOR} {message}{Style.RESET}"
-        )
-
-    def error(self, message: str, *, log: bool = True) -> None:
-        if log:
-            self.LOG.error(message)
-        print(
-            f"{Style.RED}{Style.BOLD}==> ERROR:"
-            f"{Style.RESET_COLOR} {message}{Style.RESET}"
-        )
-
-    def prompt(
-        self,
-        message: str,
-        answers: list[str] | None = None,
-        default: str = "",
-        *,
-        log: bool = True,
-        lower: bool = True,
-        alternates: dict[str, str] | None = None,
-    ) -> str:
-        if answers:
-            answer_display = f" [{
-                "/".join(
-                    answer.lower() if answer != default else answer.upper()
-                    for answer in answers
-                )
-            }]"
-            if default and default not in answers:
-                raise ValueError(
-                    f'default "{default}" not valid: {answer_display}'
-                )
-        else:
-            answer_display = ""
-        message = f"{message}{answer_display} "
-        while True:
-            answer = (
-                input(
-                    f"{Style.GREEN}{Style.BOLD}::"
-                    f"{Style.RESET_COLOR} {message}{Style.RESET}"
-                )
-                or default
-            )
-            if lower:
-                answer = answer.lower()
-            if alternates:
-                answer = alternates.get(answer, answer)
-            if not answers or answer in answers:
-                return answer
-            self.detail("Invalid answer.", log=False)
-        if log:
-            self.LOG.info(f"PROMPT: {message}{answer}")
-        return answer
-
-    def prompt_yes_no(self, message: str, default: str = "") -> bool:
-        return (
-            self.prompt(
-                message,
-                ["y", "n"],
-                default,
-                alternates=type(self).__YES_NO_ALTERNATES,
-            )
-            == "y"
-        )
-
-
 def command_with_escalation(
     command: Sequence[str | bytes | os.PathLike[Any]], *, quiet: bool = True
 ) -> None:
@@ -289,7 +197,7 @@ def command_with_escalation(
 
 
 def diff_merge(
-    original: str | Path, changed: str | Path, *, diffprog: str = ""
+    original: str | Path, other: str | Path, *, diffprog: str = ""
 ) -> None:
     for command in [
         diffprog,
@@ -298,7 +206,7 @@ def diff_merge(
         "vim -d",
     ]:
         if command:
-            command_line = command.split() + [str(original), str(changed)]
+            command_line = command.split() + [str(original), str(other)]
             if which(command_line[0]):
                 LOG.info(f"Invoking diffprog: {command_line}")
                 subprocess.run(command_line)
@@ -310,9 +218,8 @@ def diff_merge(
 class ReviewedFileUpdater:
     original: Path
     _ = KW_ONLY
-    changed: Path
+    other: Path
     delete: bool = False
-    _tui: Tui = field(init=False, default_factory=lambda: Tui(LOG))
 
     @classmethod
     def from_content(
@@ -343,7 +250,7 @@ class ReviewedFileUpdater:
         traceback: TracebackType | None,
     ) -> bool | None:
         if self.delete:
-            self.changed.unlink()
+            self.other.unlink()
         return None
 
     @classmethod
@@ -352,26 +259,25 @@ class ReviewedFileUpdater:
     ) -> ReviewedFileUpdater:
         return cls.from_content(original, content=str(configuration))
 
-    def review(self) -> bool:
-        self._tui.info(f"Review requested for file: {self.original}")
-        if self._tui.prompt_yes_no("Review the changes?"):
-            diff_merge(self.original, self.changed)
-        return self._tui.prompt_yes_no("Proceed with installation?")
+    def remove(self, *, review: bool = True, confirm: bool = True) -> None:
+        tui.info(f"Removing file: {self.original}")
+        if review and tui.prompt_yes_no("Compare existing with expected?"):
+            diff_merge(self.original, self.other)
 
-    def remove(self, review: bool = True) -> None:
-        if not review or self.review():
-            self._tui.info(f"Removing file: {self.original}")
-            if self._tui.prompt_yes_no("Proceed with removal?"):
-                command_with_escalation(["unlink", str(self.original)])
+        if not confirm or tui.prompt_yes_no("Proceed with removal?"):
+            command_with_escalation(["unlink", str(self.original)])
 
-    def replace(self, review: bool = True) -> None:
-        if not review or self.review():
-            self._tui.info(f"Replacing file: {self.original}")
+    def replace(self, *, review: bool = True, confirm: bool = True) -> None:
+        tui.info(f"Replacing file: {self.original}")
+        if review and tui.prompt_yes_no("Review the changes?"):
+            diff_merge(self.original, self.other)
+
+        if not confirm or tui.prompt_yes_no("Proceed with replacement?"):
             command_with_escalation(
                 [
                     "cp",
                     "--no-preserve=mode,ownership",
-                    str(self.changed),
+                    str(self.other),
                     str(self.original),
                 ]
             )

@@ -6,13 +6,13 @@ from enum import StrEnum
 from functools import cached_property
 
 
-class Style(StrEnum):
+class TermStyle(StrEnum):
     @dataclass
-    class __StyleSettings:
+    class __TermStyleSettings:
         enabled: bool = True
-        overrides: dict[Style, str] = field(default_factory=dict)
+        overrides: dict[TermStyle, str] = field(default_factory=dict)
 
-    __settings: __StyleSettings = __StyleSettings()
+    __settings: __TermStyleSettings = __TermStyleSettings()
     RESET = "sgr0"
     RESET_COLOR = "op"
     BOLD = "bold"
@@ -60,7 +60,7 @@ class Style(StrEnum):
         return ""
 
     @classmethod
-    def set_overrides(cls, escapes: dict[Style, str]) -> None:
+    def set_overrides(cls, escapes: dict[TermStyle, str]) -> None:
         cls.__settings.overrides = escapes.copy()
 
     @classmethod

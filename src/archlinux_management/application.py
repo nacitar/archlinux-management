@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import argparse
 import logging
+import sys
 from dataclasses import KW_ONLY, dataclass
 from logging import Handler
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Sequence
 
+from .term_style import TermStyle
 from .utility import Configuration, ReviewedFileUpdater, get_resource_content
 
 LOG = logging.getLogger(__name__)
@@ -98,6 +100,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         const=logging.DEBUG,
         help="Maximum console log verbosity (DEBUG).  Overrides -v and -q.",
     )
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help=(
+            "Control colorized output: "
+            "'auto' (default), 'always', or 'never'."
+        ),
+    )
     operation_group = parser.add_mutually_exclusive_group(required=True)
     operation_group.add_argument(
         "-i",
@@ -118,6 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="The target modification.",
     )
     args = parser.parse_args(args=argv)
+
     configure_logging(
         console_level=args.console_level or logging.WARNING,
         log_file_options=(
@@ -130,6 +142,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # append=False
             )
         ),
+    )
+    TermStyle.set_enabled(
+        args.color == "always"
+        or (args.color == "auto" and sys.stdout.isatty())
     )
 
     if args.modification == "pacman_hook_paccache":
