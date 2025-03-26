@@ -14,7 +14,7 @@ from typing import Any, Sequence, Type
 
 from . import tui
 
-LOG = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 SECTION_REGEX = re.compile(r"^\s*\[\s*(?P<name>[^]]+)\s*\]\s*$")
 KEY_VALUE_PATTERN = re.compile(
@@ -192,7 +192,7 @@ def command_with_escalation(
         )
 
     if subprocess.run(command, **options).returncode:
-        LOG.warning("sudo appears to be required.")
+        logger.warning("sudo appears to be required.")
         subprocess.run(["sudo"] + list(command), check=True, **options)
 
 
@@ -208,7 +208,7 @@ def diff_merge(
         if command:
             command_line = command.split() + [str(original), str(other)]
             if which(command_line[0]):
-                LOG.info(f"Invoking diffprog: {command_line}")
+                logger.info(f"Invoking diffprog: {command_line}")
                 subprocess.run(command_line)
                 return
     raise RuntimeError("no diffprog specified or located.")
@@ -265,7 +265,7 @@ class ReviewedFileUpdater:
             diff_merge(self.original, self.other)
 
         if not confirm or tui.prompt_yes_no("Proceed with removal?"):
-            LOG.info(f"Removing: {self.original}")
+            logger.info(f"Removing: {self.original}")
             command_with_escalation(["unlink", str(self.original)])
 
     def replace(self, *, review: bool = True, confirm: bool = True) -> None:
@@ -274,7 +274,7 @@ class ReviewedFileUpdater:
             diff_merge(self.original, self.other)
 
         if not confirm or tui.prompt_yes_no("Proceed with replacement?"):
-            LOG.info(f"Replacing: {self.original}")
+            logger.info(f"Replacing: {self.original}")
             command_with_escalation(
                 [
                     "cp",

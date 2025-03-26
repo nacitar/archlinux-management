@@ -12,7 +12,7 @@ from typing import Sequence
 from .term_style import TermStyle
 from .utility import Configuration, ReviewedFileUpdater, get_resource_content
 
-LOG = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -98,7 +98,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_const",
         dest="console_level",
         const=logging.DEBUG,
-        help="Maximum console log verbosity (DEBUG).  Overrides -v and -q.",
+        help="Maximizes console log verbosity to DEBUG.  Overrides -v and -q.",
     )
     parser.add_argument(
         "--color",
@@ -153,15 +153,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         target_path = Path("/usr/share/libalpm/hooks/paccache.hook")
         if args.install:
             if target_path.exists():
-                LOG.warning(f"SKIPPING, already installed: {target_path}")
+                logger.warning(f"SKIPPING, already installed: {target_path}")
             else:
-                LOG.info(f"writing file: {target_path}")
+                logger.info(f"writing file: {target_path}")
                 target_path.write_text(get_resource_content("paccache.hook"))
         elif args.uninstall:
             if target_path.exists():
                 target_path.unlink()
             else:
-                LOG.warning(f"SKIPPING, not present: {target_path}")
+                logger.warning(f"SKIPPING, not present: {target_path}")
         else:
             raise NotImplementedError()
         return 0
