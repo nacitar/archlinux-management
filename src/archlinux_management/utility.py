@@ -219,7 +219,13 @@ def diff_merge(original: Path, other: Path, *, diffprog: str = "") -> None:
 
 
 def edit_file(path: Path, *, editor: str = "") -> None:
-    for command in [editor, os.environ.get("EDITOR", ""), "nvim", "vim"]:
+    for command in [
+        editor,
+        os.environ.get("VISUAL", ""),
+        os.environ.get("EDITOR", ""),
+        "nvim",
+        "vim",
+    ]:
         if command:
             command_line = shlex.split(command) + [str(path)]
             if which(command_line[0]):
