@@ -270,7 +270,9 @@ class ReviewedFileUpdater:
         return None
 
     def matches(self) -> bool:
-        return self.target.exists() and filecmp.cmp(self.target, self.staging)
+        return self.target.exists() and filecmp.cmp(
+            self.target, self.staging, shallow=False
+        )
 
     @classmethod
     def from_configuration(
