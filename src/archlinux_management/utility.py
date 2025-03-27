@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import filecmp
 import importlib.resources
 import logging
 import os
 import re
+import shlex
 import subprocess
-from dataclasses import KW_ONLY, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from shutil import which
 from tempfile import NamedTemporaryFile
@@ -183,7 +185,7 @@ class Configuration:
 
 
 def command_with_escalation(
-    command: Sequence[str | bytes | os.PathLike[Any]], *, quiet: bool = True
+    command: Sequence[str], *, quiet: bool = True
 ) -> None:
     options: dict[str, Any] = {}
     if quiet:
@@ -191,14 +193,16 @@ def command_with_escalation(
             {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
         )
 
+    cli_output = f"Executing {shlex.join(command)}"
+    logger.info(cli_output)
+    tui.info(cli_output)
     if subprocess.run(command, **options).returncode:
-        logger.warning("sudo appears to be required.")
+        tui.detail("sudo appears to be required; invoking with sudo...")
         subprocess.run(["sudo"] + list(command), check=True, **options)
+    tui.info("Execution successful!")
 
 
-def diff_merge(
-    original: str | Path, other: str | Path, *, diffprog: str = ""
-) -> None:
+def diff_merge(original: Path, other: Path, *, diffprog: str = "") -> None:
     for command in [
         diffprog,
         os.environ.get("DIFFPROG", ""),
@@ -206,38 +210,50 @@ def diff_merge(
         "vim -d",
     ]:
         if command:
-            command_line = command.split() + [str(original), str(other)]
+            command_line = shlex.split(command) + [str(original), str(other)]
             if which(command_line[0]):
-                logger.info(f"Invoking diffprog: {command_line}")
+                logger.info(f"Invoking diffprog: {shlex.join(command_line)}")
                 subprocess.run(command_line)
                 return
     raise RuntimeError("no diffprog specified or located.")
 
 
-@dataclass
+def edit_file(path: Path, *, editor: str = "") -> None:
+    for command in [editor, os.environ.get("EDITOR", ""), "nvim", "vim"]:
+        if command:
+            command_line = shlex.split(command) + [str(path)]
+            if which(command_line[0]):
+                logger.info(f"Invoking editor: {shlex.join(command_line)}")
+                subprocess.run(command_line)
+                return
+    raise RuntimeError("no diffprog specified or located.")
+
+
+@dataclass(kw_only=True)
 class ReviewedFileUpdater:
-    original: Path
-    _ = KW_ONLY
-    other: Path
+    target: Path
+    staging: Path
     delete: bool = False
 
     @classmethod
     def from_content(
-        cls, original: Path, *, content: str
+        cls, *, target: Path, content: str
     ) -> ReviewedFileUpdater:
         with NamedTemporaryFile(
-            "w+", delete=False, suffix=original.suffix
+            "w+", delete=False, suffix=target.suffix
         ) as temp_file:
             temp_file.write(content)
             temp_file.close()
-        return ReviewedFileUpdater(original, Path(temp_file.name), delete=True)
+        return ReviewedFileUpdater(
+            target=target, staging=Path(temp_file.name), delete=True
+        )
 
     @classmethod
     def from_resource(
-        cls, original: Path, *, resource: str
+        cls, *, target: Path, resource: str
     ) -> ReviewedFileUpdater:
         return cls.from_content(
-            original, content=get_resource_content(resource)
+            target=target, content=get_resource_content(resource)
         )
 
     def __enter__(self) -> ReviewedFileUpdater:
@@ -250,36 +266,62 @@ class ReviewedFileUpdater:
         traceback: TracebackType | None,
     ) -> bool | None:
         if self.delete:
-            self.other.unlink()
+            self.staging.unlink()
         return None
+
+    def matches(self) -> bool:
+        return self.target.exists() and filecmp.cmp(self.target, self.staging)
 
     @classmethod
     def from_configuration(
-        cls, original: Path, configuration: Configuration
+        cls, target: Path, configuration: Configuration
     ) -> ReviewedFileUpdater:
-        return cls.from_content(original, content=str(configuration))
+        return cls.from_content(target=target, content=str(configuration))
 
     def remove(self, *, review: bool = True, confirm: bool = True) -> None:
-        tui.info(f"Removing file: {self.original}")
-        if review and tui.prompt_yes_no("Compare existing with expected?"):
-            diff_merge(self.original, self.other)
-
-        if not confirm or tui.prompt_yes_no("Proceed with removal?"):
-            logger.info(f"Removing: {self.original}")
-            command_with_escalation(["unlink", str(self.original)])
+        if not self.target.exists():
+            tui.info(f"Not installed; skipping removal: {self.target}")
+        else:
+            tui.info(f"Removing file: {self.target}")
+            if review:
+                if self.matches():
+                    tui.detail(
+                        "Skipping review because file matches expected."
+                    )
+                elif tui.prompt_yes_no(
+                    "Installed file does not match expected; compare them?"
+                ):
+                    diff_merge(self.target, self.staging)
+            if not confirm or tui.prompt_yes_no("Proceed with removal?"):
+                command_with_escalation(["unlink", str(self.target)])
+                logger.info(f"File removed: {self.target}")
+                return
+        logger.info(f"File removal skipped: {self.target}")
 
     def replace(self, *, review: bool = True, confirm: bool = True) -> None:
-        tui.info(f"Replacing file: {self.original}")
-        if review and tui.prompt_yes_no("Review the changes?"):
-            diff_merge(self.original, self.other)
+        if self.matches():
+            tui.info(f"Installed file matches; skipping update: {self.target}")
+        else:
+            tui.info(f"Replacing file: {self.target}")
+            if review:
+                if not self.target.exists():
+                    tui.detail("Target does not exist.")
+                    if tui.prompt_yes_no(
+                        "Review/edit the content to be installed?"
+                    ):
+                        edit_file(self.staging)
+                elif tui.prompt_yes_no("Review/edit the changes to be made?"):
+                    diff_merge(self.target, self.staging)
 
-        if not confirm or tui.prompt_yes_no("Proceed with replacement?"):
-            logger.info(f"Replacing: {self.original}")
-            command_with_escalation(
-                [
-                    "cp",
-                    "--no-preserve=mode,ownership",
-                    str(self.other),
-                    str(self.original),
-                ]
-            )
+            if not confirm or tui.prompt_yes_no("Proceed with replacement?"):
+                command_with_escalation(
+                    [
+                        "cp",
+                        "--no-preserve=mode,ownership",
+                        str(self.staging),
+                        str(self.target),
+                    ]
+                )
+                logger.info(f"File replaced: {self.target}")
+                return
+        logger.info(f"File replacement skipped: {self.target}")

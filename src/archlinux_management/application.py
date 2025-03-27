@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .term_style import TermStyle
-from .utility import Configuration, ReviewedFileUpdater, get_resource_content
+from .utility import Configuration, ReviewedFileUpdater
 
 logger = logging.getLogger(__name__)
 
@@ -149,21 +149,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     if args.modification == "pacman_hook_paccache":
-        # TODO: adjust logic for ReviewedFileUpdater
-        target_path = Path("/usr/share/libalpm/hooks/paccache.hook")
-        if args.install:
-            if target_path.exists():
-                logger.warning(f"SKIPPING, already installed: {target_path}")
+        with ReviewedFileUpdater.from_resource(
+            target=Path("/usr/share/libalpm/hooks/paccache.hook"),
+            resource="paccache.hook",
+        ) as updater:
+            if args.install:
+                updater.replace()
             else:
-                logger.info(f"writing file: {target_path}")
-                target_path.write_text(get_resource_content("paccache.hook"))
-        elif args.uninstall:
-            if target_path.exists():
-                target_path.unlink()
-            else:
-                logger.warning(f"SKIPPING, not present: {target_path}")
-        else:
-            raise NotImplementedError()
+                updater.remove()
         return 0
     elif args.modification == "journald_limits":
         # conf_path = Path("/etc/systemd/journald.conf")
