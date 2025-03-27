@@ -157,33 +157,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 updater.replace()
             else:
                 updater.remove()
-        return 0
     elif args.modification == "journald_limits":
-        # conf_path = Path("/etc/systemd/journald.conf")
-        conf_path = Path("/home/nacitar/tmp/journald.conf")
-        # TODO: the real change?
+        conf_path = Path("/etc/systemd/journald.conf")
         configuration = Configuration.from_file(conf_path)
-        configuration.set("Journal.RateLimitBurst", "moo")
-        configuration.set("Journal.Waffles", "syrup")
-        configuration.set("Banana.Biscuit", "snarf")
-        configuration.set("Journal.Waffles", "butter")
-        configuration.comment("Journal.Waffles")
-
-        # TODO: handle install/uninstall?
+        if args.install:
+            configuration.set("Journal.SystemMaxUse", "200M")
+            configuration.set("Journal.MaxRetentionSec", "2week")
+        else:
+            configuration.comment("Journal.SystemMaxUse", "")
+            configuration.comment("Journal.MaxRetentionSec", "")
         with ReviewedFileUpdater.from_configuration(
-            conf_path, configuration
+            target=conf_path, configuration=configuration
         ) as updater:
             updater.replace()
-
-    # configuration = Configuration.from_file("/etc/systemd/journald.conf")
-    # print(len(configuration._sections))
-    # print(configuration.get("Journal.RateLimitBurst"))
-    # configuration.set("Journal.RateLimitBurst", "moo")
-    # configuration.set("Journal.Waffles", "syrup")
-    # print(configuration.get("Journal.RateLimitBurst"))
-    # configuration.set("Banana.Biscuit", "snarf")
-    # configuration.set("Journal.Waffles", "butter")
-    # configuration.comment("Journal.Waffles")
-    # print()
-    # print(configuration)
+    else:
+        raise NotImplementedError(f"Unknown modification: {args.modification}")
     return 0

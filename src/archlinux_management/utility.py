@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 SECTION_REGEX = re.compile(r"^\s*\[\s*(?P<name>[^]]+)\s*\]\s*$")
 KEY_VALUE_PATTERN = re.compile(
     r"^(?P<indent>\s*)"
-    r"(?P<key>[^=]+)(?P<assignment>\s*=\s*)(?P<value>.+?)(?P<ws_post>\s*)$"
+    r"(?P<key>[^=]+)(?P<assignment>\s*=\s*)(?P<value>.*)(?P<ws_post>\s*)$"
 )
 
 
@@ -119,10 +119,12 @@ class Configuration:
             return ""
         return fields[-1].value
 
-    def comment(self, key: str) -> None:
+    def comment(self, key: str, value: str | None = None) -> None:
         fields = self._get_set_fields(key)
         if fields:
             fields[-1].comment = self._comment_char
+            if value is not None:
+                fields[-1].value = value
 
     def set(self, key: str, value: str) -> None:
         # get uncommented fields, or a commented one if there's only one
@@ -282,7 +284,7 @@ class ReviewedFileUpdater:
 
     @classmethod
     def from_configuration(
-        cls, target: Path, configuration: Configuration
+        cls, *, target: Path, configuration: Configuration
     ) -> ReviewedFileUpdater:
         return cls.from_content(target=target, content=str(configuration))
 
