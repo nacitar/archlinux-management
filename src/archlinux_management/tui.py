@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Generic, Iterable, TypeVar
 
 from .term_style import TermStyle
+
+T = TypeVar("T", default=str)
 
 
 def info(message: str, *, indent: int = 0, indicator: str = "==>") -> None:
@@ -96,14 +99,21 @@ def prompt_yes_no(
 
 
 @dataclass
-class Menu:
+class Menu(Generic[T]):
     class _PreviousMenuError(RuntimeError):
         pass
 
     message: str
-    options: dict[str, str | Menu]
+    options: dict[str, T | Menu[T]]
 
-    def __prompt(self, allow_back: bool = False) -> str:
+    def values(self) -> Iterable[T]:
+        for value in self.options.values():
+            if isinstance(value, Menu):
+                yield from value.values()
+            else:
+                yield value
+
+    def __prompt(self, allow_back: bool = False) -> T:
         while True:
             keys = list(self.options.keys())
             if not keys:
@@ -121,14 +131,14 @@ class Menu:
             )
             print()
             if answer == "0":
-                raise type(self)._PreviousMenuError()
-            value: str | Menu = self.options[keys[int(answer) - 1]]
+                raise Menu._PreviousMenuError()
+            value: T | Menu[T] = self.options[keys[int(answer) - 1]]
             if isinstance(value, Menu):
                 try:
                     value = value.__prompt(True)
-                except type(self)._PreviousMenuError:
+                except Menu._PreviousMenuError:
                     continue
             return value
 
-    def prompt(self) -> str:
+    def prompt(self) -> T:
         return self.__prompt(allow_back=False)

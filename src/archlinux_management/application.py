@@ -9,8 +9,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Sequence
 
+from . import modifications, tui
 from .term_style import TermStyle
-from .utility import Configuration, ReviewedFileUpdater
 
 logger = logging.getLogger(__name__)
 
@@ -109,25 +109,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             "'auto' (default), 'always', or 'never'."
         ),
     )
-    operation_group = parser.add_mutually_exclusive_group(required=True)
-    operation_group.add_argument(
-        "-i",
-        "--install",
-        action="store_true",
-        help="Install the selected modification.",
-    )
-    operation_group.add_argument(
-        "-u",
-        "--uninstall",
-        action="store_true",
-        help="Uninstall the selected modification.",
+    parser.add_argument(
+        "-m",
+        "--modification",
+        choices=tuple(modifications.argument_lookup.keys()),
+        help="The modification to manage.  Displays a menu by default.",
     )
     parser.add_argument(
-        "modification",
-        type=str,
-        choices=["pacman_hook_paccache", "journald_limits"],
-        help="The target modification.",
+        "-o",
+        "--operation",
+        choices=("apply", "remove"),
+        help="The modification to manage.  Displays a menu by default",
     )
+    # TODO: add a force argument to avoid prompting?
     args = parser.parse_args(args=argv)
 
     configure_logging(
@@ -148,28 +142,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         or (args.color == "auto" and sys.stdout.isatty())
     )
 
-    if args.modification == "pacman_hook_paccache":
-        with ReviewedFileUpdater.from_resource(
-            target=Path("/usr/share/libalpm/hooks/paccache.hook"),
-            resource="paccache.hook",
-        ) as updater:
-            if args.install:
-                updater.replace()
-            else:
-                updater.remove()
-    elif args.modification == "journald_limits":
-        conf_path = Path("/etc/systemd/journald.conf")
-        configuration = Configuration.from_file(conf_path)
-        if args.install:
-            configuration.set("Journal.SystemMaxUse", "200M")
-            configuration.set("Journal.MaxRetentionSec", "2week")
+    try:
+        if args.modification:
+            modification = modifications.argument_lookup[args.modification]
         else:
-            configuration.comment("Journal.SystemMaxUse", "")
-            configuration.comment("Journal.MaxRetentionSec", "")
-        with ReviewedFileUpdater.from_configuration(
-            target=conf_path, configuration=configuration
-        ) as updater:
-            updater.replace()
-    else:
-        raise NotImplementedError(f"Unknown modification: {args.modification}")
+            modification = modifications.menu.prompt()
+        if args.operation:
+            operation = args.operation == "apply"
+        else:
+            operation = tui.Menu[bool](
+                "Select operation", {"apply": True, "remove": False}
+            ).prompt()
+    except (KeyboardInterrupt, EOFError) as e:
+        print()
+        tui.error(f"{type(e).__name__} received; aborting...")
+        return 1
+
+    modification(operation)
     return 0
