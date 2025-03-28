@@ -9,7 +9,12 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Sequence
 
-from . import modifications, tui
+from . import tui
+from .modifications import (
+    MODIFICATION_LOOKUP,
+    MODIFICATION_MENU,
+    ModificationOptions,
+)
 from .term_style import TermStyle
 
 logger = logging.getLogger(__name__)
@@ -112,7 +117,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "-m",
         "--modification",
-        choices=tuple(modifications.argument_lookup.keys()),
+        choices=tuple(MODIFICATION_LOOKUP.keys()),
         help="The modification to manage.  Displays a menu by default.",
     )
     parser.add_argument(
@@ -120,6 +125,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--operation",
         choices=("apply", "remove"),
         help="The modification to manage.  Displays a menu by default",
+    )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help=(
+            "Non-interactive execution; do not prompt "
+            "for reviews or confirmations."
+        ),
     )
     # TODO: add a force argument to avoid prompting?
     args = parser.parse_args(args=argv)
@@ -144,13 +157,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         if args.modification:
-            modification = modifications.argument_lookup[args.modification]
+            modification = MODIFICATION_LOOKUP[args.modification]
         else:
-            modification = modifications.menu.prompt()
+            modification = MODIFICATION_MENU.prompt()
         if args.operation:
-            operation = args.operation == "apply"
+            apply: bool = args.operation == "apply"
         else:
-            operation = tui.Menu[bool](
+            apply = tui.Menu[bool](
                 "Select operation", {"apply": True, "remove": False}
             ).prompt()
     except (KeyboardInterrupt, EOFError) as e:
@@ -158,5 +171,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         tui.error(f"{type(e).__name__} received; aborting...")
         return 1
 
-    modification(operation)
-    return 0
+    return not modification(
+        ModificationOptions(
+            review=not args.non_interactive,
+            confirm=not args.non_interactive,
+            sudo_prompt=not args.non_interactive,
+            apply=apply,
+        )
+    )

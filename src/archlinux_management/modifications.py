@@ -1,45 +1,53 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from .configuration import Configuration
+from .file_updater import FileUpdater, FileUpdaterOptions
 from .tui import Menu
-from .utility import Configuration, ReviewedFileUpdater
 
 
-def pacman_hook_paccache(apply: bool) -> None:
-    with ReviewedFileUpdater.from_resource(
+@dataclass
+class ModificationOptions(FileUpdaterOptions):
+    apply: bool
+
+
+def pacman_hook_paccache(options: ModificationOptions) -> bool:
+    with FileUpdater.from_resource(
         target=Path("/usr/share/libalpm/hooks/paccache.hook"),
         resource="paccache.hook",
+        options=options,
     ) as updater:
-        if apply:
-            updater.replace()
+        if options.apply:
+            return updater.update()
         else:
-            updater.remove()
+            return updater.remove()
 
 
-def journald_limits_size_and_age(apply: bool) -> None:
+def journald_limits_size_and_age(options: ModificationOptions) -> bool:
     conf_path = Path("/etc/systemd/journald.conf")
     configuration = Configuration.from_file(conf_path)
-    if apply:
+    if options.apply:
         configuration.set("Journal.SystemMaxUse", "200M")
         configuration.set("Journal.MaxRetentionSec", "2week")
     else:
         configuration.comment("Journal.SystemMaxUse", "")
         configuration.comment("Journal.MaxRetentionSec", "")
-    with ReviewedFileUpdater.from_configuration(
-        target=conf_path, configuration=configuration
+    with FileUpdater.from_configuration(
+        target=conf_path, configuration=configuration, options=options
     ) as updater:
-        updater.replace()
+        return updater.update()
 
 
-menu = Menu[Callable[[bool], None]](
+MODIFICATION_MENU = Menu[Callable[[ModificationOptions], bool]](
     "Select modification",
     {
         "pacman hook to run paccache": pacman_hook_paccache,
         "journald size and age limits": journald_limits_size_and_age,
     },
 )
-argument_lookup: dict[str, Callable[[bool], None]] = {
-    value.__name__: value for value in menu.values()
+MODIFICATION_LOOKUP: dict[str, Callable[[ModificationOptions], bool]] = {
+    value.__name__: value for value in MODIFICATION_MENU.values()
 }
