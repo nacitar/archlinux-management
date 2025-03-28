@@ -118,6 +118,7 @@ class Menu(Generic[T]):
             keys = list(self.options.keys())
             if not keys:
                 raise ValueError(f"no options provided for {type(self)}.")
+            print()
             info(self.message)
             option_width = len(str(len(keys)))
             answers = ["0"] if allow_back else []
@@ -129,7 +130,6 @@ class Menu(Generic[T]):
                 answers,
                 show_options=False,
             )
-            print()
             if answer == "0":
                 raise Menu._PreviousMenuError()
             value: T | Menu[T] = self.options[keys[int(answer) - 1]]

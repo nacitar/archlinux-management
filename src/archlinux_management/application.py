@@ -45,12 +45,21 @@ class LogFileOptions:
 def configure_logging(
     console_level: int, log_file_options: LogFileOptions | None = None
 ) -> None:
+    class SuppressableFilter(logging.Filter):
+        def __init__(self, name_suffix: str):
+            super().__init__()
+            self._suppression_name_suffix = name_suffix
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            return not record.name.endswith(self._suppression_name_suffix)
+
     logging.getLogger().handlers = []
     console_handler = logging.StreamHandler()
     console_handler.setLevel(console_level)
     console_handler.setFormatter(
         logging.Formatter(fmt="{levelname:s}: {message:s}", style="{")
     )
+    console_handler.addFilter(SuppressableFilter(name_suffix=".file_only"))
     logging.getLogger().addHandler(console_handler)
     global_level = console_level
     if log_file_options:
@@ -126,7 +135,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "-o",
         "--operation",
         choices=("apply", "remove"),
-        help="The modification to manage.  Displays a menu by default",
+        help=(
+            "The operation to perform.  Displays a menu by default.  "
+            "Ignored if --modification is not also passed."
+        ),
     )
     parser.add_argument(
         "--non-interactive",
@@ -156,30 +168,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         or (args.color == "auto" and sys.stdout.isatty())
     )
 
-    try:
+    while True:
+        try:
+            if args.modification:
+                modification = MODIFICATION_LOOKUP[args.modification]
+                tui.info(f"Modification: {args.modification}")
+            else:
+                if args.operation:
+                    raise ValueError(
+                        "operation can only be passed "
+                        "if modification is also passed."
+                    )
+                modification = MODIFICATION_MENU.prompt()
+            if args.operation:
+                apply: bool = args.operation == "apply"
+                tui.info(f"Operation: {args.operation}")
+            else:
+                apply = tui.Menu[bool](
+                    "Select operation", {"apply": True, "remove": False}
+                ).prompt()
+            result = modification(
+                ModificationOptions(
+                    review=not args.non_interactive,
+                    confirm=not args.non_interactive,
+                    sudo_prompt=not args.non_interactive,
+                    apply=apply,
+                )
+            )
+        except (KeyboardInterrupt, EOFError) as e:
+            print()
+            tui.error(f"{type(e).__name__} received; aborting...")
+            return 0
         if args.modification:
-            modification = MODIFICATION_LOOKUP[args.modification]
-        else:
-            modification = MODIFICATION_MENU.prompt()
-        if args.operation:
-            apply: bool = args.operation == "apply"
-        else:
-            apply = tui.Menu[bool](
-                "Select operation", {"apply": True, "remove": False}
-            ).prompt()
-    except (KeyboardInterrupt, EOFError) as e:
-        print()
-        tui.error(f"{type(e).__name__} received; aborting...")
-        return 1
-
-    # TODO: allow multiple operations in one interactive session?  Only makes
-    # sense if args.modification wasn't specified... and honestly operation
-    # only makes sense WITH modification, they should go together.
-    return not modification(
-        ModificationOptions(
-            review=not args.non_interactive,
-            confirm=not args.non_interactive,
-            sudo_prompt=not args.non_interactive,
-            apply=apply,
-        )
-    )
+            # if modification was passed, only one is performed
+            return not result
