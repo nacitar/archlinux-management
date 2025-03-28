@@ -72,7 +72,9 @@ def configure_logging(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Does something.")
+    parser = argparse.ArgumentParser(
+        description="Applies or removes modifications to an ArchLinux system."
+    )
     log_group = parser.add_argument_group("logging")
     log_group.add_argument(
         "--log-file",
@@ -130,11 +132,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--non-interactive",
         action="store_true",
         help=(
-            "Non-interactive execution; do not prompt "
-            "for reviews or confirmations."
+            "Non-interactive execution; disables prompting for reviews, "
+            "confirmations, or sudo password."
         ),
     )
-    # TODO: add a force argument to avoid prompting?
     args = parser.parse_args(args=argv)
 
     configure_logging(
@@ -171,6 +172,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         tui.error(f"{type(e).__name__} received; aborting...")
         return 1
 
+    # TODO: allow multiple operations in one interactive session?  Only makes
+    # sense if args.modification wasn't specified... and honestly operation
+    # only makes sense WITH modification, they should go together.
     return not modification(
         ModificationOptions(
             review=not args.non_interactive,
