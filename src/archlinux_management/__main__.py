@@ -3,15 +3,16 @@ import sys
 
 from .application import main as application_main
 
-# with our logging setup this suffix will suppress console output
-logger_file_only = logging.getLogger(f"{__name__}.file_only")
+# Given application.configure_logging(), will only log to file because
+# uncaught exceptions provide perfectly sufficient console output.
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
     try:
         sys.exit(application_main())
     except Exception as e:
-        logger_file_only.exception(e)
+        logger.exception(e)
         raise
 
 

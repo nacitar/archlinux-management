@@ -51,7 +51,9 @@ def configure_logging(
             self._suppression_name_suffix = name_suffix
 
         def filter(self, record: logging.LogRecord) -> bool:
-            return not record.name.endswith(self._suppression_name_suffix)
+            return record.name != (
+                f"{__package__}.__main__" if __package__ else "__main__"
+            )
 
     logging.getLogger().handlers = []
     console_handler = logging.StreamHandler()
