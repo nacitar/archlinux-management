@@ -45,10 +45,9 @@ class LogFileOptions:
 def configure_logging(
     console_level: int, log_file_options: LogFileOptions | None = None
 ) -> None:
-    class SuppressableFilter(logging.Filter):
-        def __init__(self, name_suffix: str):
+    class SuppressConsoleOutputFor__main__(logging.Filter):
+        def __init__(self) -> None:
             super().__init__()
-            self._suppression_name_suffix = name_suffix
 
         def filter(self, record: logging.LogRecord) -> bool:
             return record.name != (
@@ -61,7 +60,7 @@ def configure_logging(
     console_handler.setFormatter(
         logging.Formatter(fmt="{levelname:s}: {message:s}", style="{")
     )
-    console_handler.addFilter(SuppressableFilter(name_suffix=".file_only"))
+    console_handler.addFilter(SuppressConsoleOutputFor__main__())
     logging.getLogger().addHandler(console_handler)
     global_level = console_level
     if log_file_options:
