@@ -39,7 +39,14 @@ class FileUpdater:
 
     @classmethod
     def from_content(
-        cls, *, target: Path, content: str, options: FileUpdaterOptions
+        cls,
+        *,
+        target: Path,
+        content: str,
+        options: FileUpdaterOptions,
+        mode: int = 0o644,
+        owner: str = "",
+        group: str = "",
     ) -> FileUpdater:
         with NamedTemporaryFile(
             "w+", delete=False, suffix=target.suffix
@@ -51,16 +58,29 @@ class FileUpdater:
             staging=Path(temp_file.name),
             options=options,
             delete=True,
+            mode=mode,
+            owner=owner,
+            group=group,
         )
 
     @classmethod
     def from_resource(
-        cls, *, target: Path, resource: str, options: FileUpdaterOptions
+        cls,
+        *,
+        target: Path,
+        resource: str,
+        options: FileUpdaterOptions,
+        mode: int = 0o644,
+        owner: str = "",
+        group: str = "",
     ) -> FileUpdater:
         return cls.from_content(
             target=target,
             content=get_resource_content(resource),
             options=options,
+            mode=mode,
+            owner=owner,
+            group=group,
         )
 
     @classmethod
@@ -70,9 +90,17 @@ class FileUpdater:
         target: Path,
         configuration: Configuration,
         options: FileUpdaterOptions,
+        mode: int = 0o644,
+        owner: str = "",
+        group: str = "",
     ) -> FileUpdater:
         return cls.from_content(
-            target=target, content=str(configuration), options=options
+            target=target,
+            content=str(configuration),
+            options=options,
+            mode=mode,
+            owner=owner,
+            group=group,
         )
 
     def __enter__(self) -> FileUpdater:
