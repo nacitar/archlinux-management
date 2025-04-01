@@ -21,7 +21,7 @@ def pacman_hook_paccache(options: ModificationOptions) -> bool:
         options=options,
     ) as updater:
         if options.apply:
-            return updater.update()
+            return updater.apply()
         else:
             return updater.remove()
 
@@ -38,7 +38,21 @@ def journald_limits_size_and_age(options: ModificationOptions) -> bool:
     with FileUpdater.from_configuration(
         target=conf_path, configuration=configuration, options=options
     ) as updater:
-        return updater.update()
+        return updater.apply()
+
+
+def pc_speaker_device_owned_by_audio_group(
+    options: ModificationOptions,
+) -> bool:
+    with FileUpdater.from_resource(
+        target=Path("/etc/udev/rules.d/99-beep.rules"),
+        resource="99-beep.rules",
+        options=options,
+    ) as updater:
+        if options.apply:
+            return updater.apply()
+        else:
+            return updater.remove()
 
 
 MODIFICATION_MENU = Menu[Callable[[ModificationOptions], bool]](
@@ -46,6 +60,9 @@ MODIFICATION_MENU = Menu[Callable[[ModificationOptions], bool]](
     {
         "pacman hook to run paccache": pacman_hook_paccache,
         "journald size and age limits": journald_limits_size_and_age,
+        "pc speaker device owned by audio group": (
+            pc_speaker_device_owned_by_audio_group
+        ),
     },
 )
 MODIFICATION_LOOKUP: dict[str, Callable[[ModificationOptions], bool]] = {

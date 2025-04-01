@@ -33,6 +33,9 @@ class FileUpdater:
     staging: Path
     options: FileUpdaterOptions
     delete: bool
+    mode: int = 0o644
+    owner: str = ""
+    group: str = ""
 
     @classmethod
     def from_content(
@@ -123,11 +126,11 @@ class FileUpdater:
         logger.info(f"File removal skipped: {self.target}")
         return True
 
-    def update(self) -> bool:
+    def apply(self) -> bool:
         if self.matches():
             tui.info(f"Installed file matches; skipping update: {self.target}")
         else:
-            tui.info(f"Upating file: {self.target}")
+            tui.info(f"Updating file: {self.target}")
             if self.options.review:
                 if not self.target.exists():
                     tui.detail("Target does not exist.")
@@ -141,13 +144,15 @@ class FileUpdater:
             if not self.options.confirm or tui.prompt_yes_no(
                 "Proceed with update?"
             ):
+                extra_args: list[str] = []
+                if self.owner:
+                    extra_args.extend(["-o", self.owner])
+                if self.group:
+                    extra_args.extend(["-g", self.group])
                 result = execute_command(
-                    [
-                        "cp",
-                        "--no-preserve=mode,ownership",
-                        str(self.staging),
-                        str(self.target),
-                    ],
+                    ["install", "-m", f"0{oct(self.mode)[2:]}"]
+                    + extra_args
+                    + [str(self.staging), str(self.target)],
                     escalate=True,
                     use_tui=True,
                     quiet=False,
