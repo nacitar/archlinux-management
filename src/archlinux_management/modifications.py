@@ -11,10 +11,11 @@ from .tui import Menu
 
 @dataclass
 class ModificationOptions(FileUpdaterOptions):
-    apply: bool
+    apply: bool | None = None
 
 
 def pacman_hook_paccache(options: ModificationOptions) -> bool:
+
     with FileUpdater.from_resource(
         target=Path("/usr/share/libalpm/hooks/paccache.hook"),
         resource="paccache.hook",
@@ -96,6 +97,10 @@ def sysctl_steamos_vm_max_map_count(options: ModificationOptions) -> bool:
             return updater.remove()
 
 
+def list_custom_config_files() -> bool:
+    raise NotImplementedError()
+
+
 MODIFICATION_MENU = Menu[Callable[[ModificationOptions], bool]](
     "Select modification",
     {
@@ -111,6 +116,7 @@ MODIFICATION_MENU = Menu[Callable[[ModificationOptions], bool]](
         "SteamOS value for vm.max_map_count": sysctl_steamos_vm_max_map_count,
     },
 )
-MODIFICATION_LOOKUP: dict[str, Callable[[ModificationOptions], bool]] = {
-    value.__name__: value for value in MODIFICATION_MENU.values()
-}
+
+TASK_MENU = Menu[Callable[[], bool]](
+    "Select task", {"List custom config files": list_custom_config_files}
+)

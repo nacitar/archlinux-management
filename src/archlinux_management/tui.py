@@ -113,7 +113,7 @@ class Menu(Generic[T]):
             else:
                 yield value
 
-    def __prompt(self, allow_back: bool = False) -> T:
+    def prompt(self) -> T:
         while True:
             keys = list(self.options.keys())
             if not keys:
@@ -121,24 +121,23 @@ class Menu(Generic[T]):
             print()
             info(self.message)
             option_width = len(str(len(keys)))
-            answers = ["0"] if allow_back else []
+            answers = []
             for i in range(len(keys)):
                 print(f"  {i+1:>{option_width}}. {keys[i]}")
                 answers.append(str(i + 1))
-            answer = prompt(
-                f"Choice{' (0 for previous menu)' if allow_back else ''}:",
-                answers,
-                show_options=False,
-            )
+            try:
+                answer = prompt(
+                    "Choice (ctrl-d to go back):", answers, show_options=False
+                )
+            except EOFError:
+                print()  # no newline when sending EOF
+                raise
             if answer == "0":
-                raise Menu._PreviousMenuError()
+                raise EOFError()
             value: T | Menu[T] = self.options[keys[int(answer) - 1]]
             if isinstance(value, Menu):
                 try:
-                    value = value.__prompt(True)
-                except Menu._PreviousMenuError:
+                    value = value.prompt()
+                except EOFError:
                     continue
             return value
-
-    def prompt(self) -> T:
-        return self.__prompt(allow_back=False)

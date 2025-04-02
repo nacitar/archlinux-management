@@ -7,15 +7,12 @@ from dataclasses import KW_ONLY, dataclass
 from logging import Handler
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Sequence
+from typing import Callable, Sequence
 
 from . import tui
-from .modifications import (
-    MODIFICATION_LOOKUP,
-    MODIFICATION_MENU,
-    ModificationOptions,
-)
+from .modifications import MODIFICATION_MENU, TASK_MENU, ModificationOptions
 from .term_style import TermStyle
+from .tui import Menu
 
 logger = logging.getLogger(__name__)
 
@@ -126,21 +123,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             "'auto' (default), 'always', or 'never'."
         ),
     )
-    parser.add_argument(
-        "-m",
-        "--modification",
-        choices=tuple(MODIFICATION_LOOKUP.keys()),
-        help="The modification to manage.  Displays a menu by default.",
+
+    subparsers = parser.add_subparsers(
+        dest="command", help="Available subcommands", required=False
     )
-    parser.add_argument(
-        "-o",
-        "--operation",
-        choices=("apply", "remove"),
-        help=(
-            "The operation to perform.  Displays a menu by default.  "
-            "Ignored if --modification is not also passed."
-        ),
+    modification_parser = subparsers.add_parser(
+        "modification", help="Perform modifications."
     )
+    modification_parser.add_argument(
+        "--remove",
+        action="store_true",
+        help="Remove the modification instead of applying it.",
+    )
+    modification_parser.add_argument(
+        "modification_names", help="Target modification names.", nargs="+"
+    )
+
+    task_parser = subparsers.add_parser("task", help="Execute tasks.")
+    task_parser.add_argument(
+        "task_names", help="Target task names.", nargs="+"
+    )
+
     parser.add_argument(
         "--non-interactive",
         action="store_true",
@@ -169,37 +172,92 @@ def main(argv: Sequence[str] | None = None) -> int:
         or (args.color == "auto" and sys.stdout.isatty())
     )
 
-    while True:
-        try:
-            if args.modification:
-                modification = MODIFICATION_LOOKUP[args.modification]
-                tui.info(f"Modification: {args.modification}")
-            else:
-                if args.operation:
-                    raise ValueError(
-                        "operation can only be passed "
-                        "if modification is also passed."
-                    )
-                modification = MODIFICATION_MENU.prompt()
-            if args.operation:
-                apply: bool = args.operation == "apply"
-                tui.info(f"Operation: {args.operation}")
-            else:
-                apply = tui.Menu[bool](
-                    "Select operation", {"apply": True, "remove": False}
-                ).prompt()
-            result = modification(
-                ModificationOptions(
-                    review=not args.non_interactive,
-                    confirm=not args.non_interactive,
-                    sudo_prompt=not args.non_interactive,
-                    apply=apply,
-                )
+    category_menu = Menu[str](
+        "Select category", {"Modifications": "modification", "Tasks": "task"}
+    )
+
+    apply: bool | None = None
+    modifications: list[Callable[[ModificationOptions], bool]] = []
+    if args.command == "modification":
+        apply = False if args.remove else True
+        modification_lookup = {
+            value.__name__: value for value in MODIFICATION_MENU.values()
+        }
+        for modification_name in args.modification_names:
+            modification_value = modification_lookup.get(
+                modification_name, None
             )
+            if modification_value is None:
+                tui.error(
+                    f"Not a valid modification name: {modification_name}"
+                )
+                tui.detail(
+                    "Must be one of: "
+                    f"{', '.join(sorted(modification_lookup.keys()))}"
+                )
+                return 1
+            modifications.append(modification_value)
+    tasks: list[Callable[[], bool]] = []
+    if args.command == "task":
+        task_lookup = {value.__name__: value for value in TASK_MENU.values()}
+        for task_name in args.task_names:
+            task_value = task_lookup.get(task_name, None)
+            if task_value is None:
+                tui.error(f"Not a valid task name: {task_name}")
+                tui.detail(
+                    f"Must be one of: {', '.join(sorted(task_lookup.keys()))}"
+                )
+                return 1
+            tasks.append(task_value)
+        pass
+
+    prompt_again = True
+    while prompt_again:
+        if args.command:
+            prompt_again = False
+            command = args.command
+        else:
+            command = ""
+        try:
+            if not command:
+                command = category_menu.prompt()
+            try:
+                if command == "modification":
+                    while True:
+                        if not modifications:
+                            modifications.append(MODIFICATION_MENU.prompt())
+                            apply = None
+                        if apply is None:
+                            try:
+                                apply = tui.Menu[bool](
+                                    "Select operation",
+                                    {"apply": True, "remove": False},
+                                ).prompt()
+                            except EOFError:
+                                continue
+                        break
+                    for modification in modifications:
+                        modification(
+                            ModificationOptions(
+                                review=not args.non_interactive,
+                                confirm=not args.non_interactive,
+                                sudo_prompt=not args.non_interactive,
+                                apply=apply,
+                            )
+                        )
+                    modifications.clear()
+                elif command == "task":
+                    if not tasks:
+                        tasks.append(TASK_MENU.prompt())
+                    for task in tasks:
+                        task()
+                    tasks.clear()
+                else:
+                    raise AssertionError(f"Invalid command: {command}")
+            except EOFError:
+                continue
         except (KeyboardInterrupt, EOFError) as e:
             print()
             tui.error(f"{type(e).__name__} received; aborting...")
             return 0
-        if args.modification:
-            # if modification was passed, only one is performed
-            return not result
+    return 0

@@ -123,7 +123,7 @@ class FileUpdater:
 
     def remove(self) -> bool:
         if not self.target.exists():
-            tui.info(f"Not installed; skipping removal: {self.target}")
+            tui.warning(f"Not installed; skipping removal: {self.target}")
         else:
             tui.info(f"Removing file: {self.target}")
             if self.options.review:
@@ -156,7 +156,9 @@ class FileUpdater:
 
     def apply(self) -> bool:
         if self.matches():
-            tui.info(f"Installed file matches; skipping update: {self.target}")
+            tui.warning(
+                f"Installed file matches; skipping update: {self.target}"
+            )
         else:
             tui.info(f"Updating file: {self.target}")
             if self.options.review:
