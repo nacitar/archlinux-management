@@ -123,6 +123,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             "'auto' (default), 'always', or 'never'."
         ),
     )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help=(
+            "Non-interactive execution; disables prompting for reviews, "
+            "confirmations, or sudo password."
+        ),
+    )
 
     subparsers = parser.add_subparsers(
         dest="command", help="Available subcommands", required=False
@@ -140,18 +148,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     task_parser = subparsers.add_parser("task", help="Execute tasks.")
+
     task_parser.add_argument(
         "task_names", help="Target task names.", nargs="+"
     )
 
-    parser.add_argument(
-        "--non-interactive",
-        action="store_true",
-        help=(
-            "Non-interactive execution; disables prompting for reviews, "
-            "confirmations, or sudo password."
-        ),
-    )
     args = parser.parse_args(args=argv)
 
     configure_logging(
@@ -209,7 +210,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
                 return 1
             tasks.append(task_value)
-        pass
 
     prompt_again = True
     while prompt_again:
