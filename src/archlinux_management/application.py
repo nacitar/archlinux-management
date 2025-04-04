@@ -210,6 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             tasks.append(task_value)
 
     prompt_again = True
+    failures = 0
     while prompt_again:
         if args.command:
             prompt_again = False
@@ -235,20 +236,22 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 continue
                         break
                     for modification in modifications:
-                        modification(
+                        if not modification(
                             ModificationOptions(
                                 review=not non_interactive,
                                 confirm=not non_interactive,
                                 sudo_prompt=not non_interactive,
                                 apply=apply,
                             )
-                        )
+                        ):
+                            failures += 1
                     modifications.clear()
                 elif command == "task":
                     if not tasks:
                         tasks.append(TASK_MENU.prompt())
                     for task in tasks:
-                        task()
+                        if not task():
+                            failures += 1
                     tasks.clear()
                 else:
                     raise AssertionError(f"Invalid command: {command}")
@@ -257,5 +260,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (KeyboardInterrupt, EOFError) as e:
             print()
             tui.error(f"{type(e).__name__} received; aborting...")
+            # exiting from an interactive prompt; not indicating exit status
+            # as multiple things may have happened and you will have been
+            # informed in the tui.
             return 0
-    return 0
+    # exiting from a cli-driven set of actions, indicate success/failure
+    if failures:
+        tui.error(f"{failures} actions failed; see the log/terminal output.")
+    return failures
