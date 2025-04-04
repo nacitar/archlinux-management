@@ -174,9 +174,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     apply: bool | None = None
+    non_interactive: bool = False
     modifications: list[Callable[[ModificationOptions], bool]] = []
     if args.command == "modification":
         apply = False if args.remove else True
+        non_interactive = args.non_interactive
         modification_lookup = {
             value.__name__: value for value in MODIFICATION_MENU.values()
         }
@@ -235,9 +237,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     for modification in modifications:
                         modification(
                             ModificationOptions(
-                                review=not args.non_interactive,
-                                confirm=not args.non_interactive,
-                                sudo_prompt=not args.non_interactive,
+                                review=not non_interactive,
+                                confirm=not non_interactive,
+                                sudo_prompt=not non_interactive,
                                 apply=apply,
                             )
                         )
