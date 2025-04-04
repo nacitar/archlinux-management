@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import logging
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import tui
 from .configuration import Configuration
 from .file_updater import FileUpdater, FileUpdaterOptions
-from .tui import Menu
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -15,7 +20,6 @@ class ModificationOptions(FileUpdaterOptions):
 
 
 def pacman_hook_paccache(options: ModificationOptions) -> bool:
-
     with FileUpdater.from_resource(
         target=Path("/usr/share/libalpm/hooks/paccache.hook"),
         resource="paccache.hook",
@@ -97,11 +101,26 @@ def sysctl_steamos_vm_max_map_count(options: ModificationOptions) -> bool:
             return updater.remove()
 
 
-def list_custom_config_files() -> bool:
-    raise NotImplementedError()
+def clear_user_cache_dir() -> bool:
+    home: Path = Path(os.environ["HOME"])
+    if not home.is_absolute() or not home.exists():
+        raise ValueError("HOME environment variable is not valid.")
+    cache_dir = home / ".cache"
+    message = f"Clearing cache dir: {cache_dir}"
+    logger.debug(message)
+    tui.info(message)
+    for path in cache_dir.iterdir():
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    message = f"Successfully cleared cache dir: {cache_dir}"
+    logger.info(message)
+    tui.detail(message)
+    return True
 
 
-MODIFICATION_MENU = Menu[Callable[[ModificationOptions], bool]](
+MODIFICATION_MENU = tui.Menu[Callable[[ModificationOptions], bool]](
     "Select modification",
     {
         "pacman hook to run paccache": pacman_hook_paccache,
@@ -117,6 +136,6 @@ MODIFICATION_MENU = Menu[Callable[[ModificationOptions], bool]](
     },
 )
 
-TASK_MENU = Menu[Callable[[], bool]](
-    "Select task", {"List custom config files": list_custom_config_files}
+TASK_MENU = tui.Menu[Callable[[], bool]](
+    "Select task", {"Clear user cache dir": clear_user_cache_dir}
 )

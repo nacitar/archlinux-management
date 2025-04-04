@@ -123,15 +123,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             "'auto' (default), 'always', or 'never'."
         ),
     )
-    parser.add_argument(
-        "--non-interactive",
-        action="store_true",
-        help=(
-            "Non-interactive execution; disables prompting for reviews, "
-            "confirmations, or sudo password."
-        ),
-    )
-
     subparsers = parser.add_subparsers(
         dest="command", help="Available subcommands", required=False
     )
@@ -144,15 +135,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Remove the modification instead of applying it.",
     )
     modification_parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help=(
+            "Non-interactive execution; disables prompting for reviews, "
+            "confirmations, or sudo password."
+        ),
+    )
+    modification_parser.add_argument(
         "modification_names", help="Target modification names.", nargs="+"
     )
-
     task_parser = subparsers.add_parser("task", help="Execute tasks.")
-
     task_parser.add_argument(
         "task_names", help="Target task names.", nargs="+"
     )
-
     args = parser.parse_args(args=argv)
 
     configure_logging(
