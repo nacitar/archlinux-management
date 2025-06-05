@@ -1,0 +1,1 @@
+ACTION=="add", SUBSYSTEM=="sound", ATTRS{idVendor}=="b58e", ATTRS{idProduct}=="9e84", RUN+="/usr/local/bin/mute-yeti-mic-loopback.sh"

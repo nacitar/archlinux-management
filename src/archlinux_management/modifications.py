@@ -60,6 +60,32 @@ def pc_speaker_device_owned_by_audio_group(
             return updater.remove()
 
 
+def automatically_mute_yeti_microphone_loopback(
+    options: ModificationOptions,
+) -> bool:
+    result = True
+    with FileUpdater.from_resource(
+        target=Path("/etc/udev/rules.d/99-mute-yeti-mic-loopback.rules"),
+        resource="99-mute-yeti-mic-loopback.rules",
+        options=options,
+    ) as updater:
+        if options.apply:
+            result = updater.apply() and result
+        else:
+            result = updater.remove() and result
+    with FileUpdater.from_resource(
+        target=Path("/usr/local/bin/mute-yeti-mic-loopback.sh"),
+        resource="mute-yeti-mic-loopback.sh",
+        mode=0o755,  # +x
+        options=options,
+    ) as updater:
+        if options.apply:
+            result = updater.apply() and result
+        else:
+            result = updater.remove() and result
+    return result
+
+
 def systemd_networkd_wait_for_any_interface_5s_timeout(
     options: ModificationOptions,
 ) -> bool:
@@ -125,6 +151,9 @@ MODIFICATION_MENU = tui.Menu[Callable[[ModificationOptions], bool]](
     {
         "pacman hook to run paccache": pacman_hook_paccache,
         "journald size and age limits": journald_limits_size_and_age,
+        "automatically mute Blue Yeti microphone loopback": (
+            automatically_mute_yeti_microphone_loopback
+        ),
         "pc speaker device owned by audio group": (
             pc_speaker_device_owned_by_audio_group
         ),
