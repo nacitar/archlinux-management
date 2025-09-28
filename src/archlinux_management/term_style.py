@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 from dataclasses import dataclass, field
 from enum import StrEnum
 from functools import cached_property
+
+logger = logging.getLogger(__name__)
 
 
 class TermStyle(StrEnum):
@@ -39,13 +42,17 @@ class TermStyle(StrEnum):
 
     @staticmethod
     def tput(arguments: list[str]) -> str:
-        return subprocess.run(
-            ["tput"] + arguments,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-            check=False,
-        ).stdout
+        try:
+            return subprocess.run(
+                ["tput"] + arguments,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=False,
+            ).stdout
+        except FileNotFoundError:
+            logger.warning("tput not in path, returning an empty string.")
+            return ""
 
     @cached_property
     def escape(self) -> str:
